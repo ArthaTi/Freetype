@@ -1,0 +1,70 @@
+# This starter workflow is for a CMake project running on multiple platforms. There is a different starter workflow if
+# you just want a single platform.
+# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-single-platform.yml
+name: CMake on multiple platforms
+
+on:
+  push:
+    branches: [ "master", "release" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # Set fail-fast to false to ensure that feedback is delivered for all matrix combinations. Consider changing this
+      # to true when your workflow is stable.
+      fail-fast: false
+
+      # Set up a matrix to run the following 3 configurations:
+      # 1. <Windows, Release, latest MSVC compiler toolchain on the default runner image, default generator>
+      # 2. <Linux, Release, latest GCC compiler toolchain on the default runner image, default generator>
+      # 3. <Linux, Release, latest Clang compiler toolchain on the default runner image, default generator>
+      #
+      # To add more build types (Release, Debug, RelWithDebInfo, etc.) customize the build_type list.
+      matrix:
+        os: [ubuntu-20.04, windows-2019, macos-11]
+        build_type: [Release]
+        c_compiler: [clang]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set reusable strings
+      id: strings
+      shell: bash
+      run: |
+        echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+
+    - name: Configure CMake
+      run: >
+        cmake -B ${{ steps.strings.outputs.build-output-dir }}
+        -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+        -D FT_DISABLE_ZLIB=TRUE
+        -D FT_DISABLE_BZIP2=TRUE
+        -D FT_DISABLE_PNG=TRUE
+        -D FT_DISABLE_HARFBUZZ=TRUE
+        -D FT_DISABLE_BROTLI=TRUE
+        -S ${{ github.workspace }}
+      env:
+
+        # Include some flags to reduce memory safety checks on Windows. Risky, yes, but because they introduce some
+        # C-specific symbols, they don't interact well with D.
+        CFLAGS: ${{ startsWith(matrix.os, 'windows-') && '/GS- /Gs10000000 /D_NO_CRT_STDIO_INLINE' || '' }}
+
+
+    - name: Build
+      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: Static library for ${{ matrix.os }}
+        path: |
+          **/libfreetype.a
+          **/freetype.lib
+        if-no-files-found: error

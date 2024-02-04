@@ -21,9 +21,15 @@ jobs:
       # Set up a matrix to run the following 4 configurations:
       # Ubuntu, Windows, macOS (x86) and macOS (ARM)
       matrix:
-        os: [ubuntu-20.04, windows-2019, macos-11, macos-14]
+        os: [ubuntu-20.04, macos-11, macos-14]
         build_type: [Release]
         c_compiler: [clang]
+        shared: ["false"]
+        include:
+        - os: windows-2019
+          build_type: Release
+          c_compiler: clang
+          shared: "true"
 
     steps:
     - uses: actions/checkout@v3
@@ -34,12 +40,17 @@ jobs:
       run: |
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
+    - name: Setup Ninja
+      uses: ashutoshvarma/setup-ninja@master
+
     - name: Configure CMake
       run: >
         cmake -B ${{ steps.strings.outputs.build-output-dir }}
-        -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
-        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-        -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+        -G Ninja
+        -D CMAKE_C_COMPILER=${{ matrix.c_compiler }}
+        -D CMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -D CMAKE_POSITION_INDEPENDENT_CODE=ON
+        -D BUILD_SHARED_LIBS=${{ matrix.shared }}
         -D FT_DISABLE_ZLIB=TRUE
         -D FT_DISABLE_BZIP2=TRUE
         -D FT_DISABLE_PNG=TRUE
@@ -47,20 +58,18 @@ jobs:
         -D FT_DISABLE_BROTLI=TRUE
         -S ${{ github.workspace }}
       env:
-
-        # Include some flags to reduce memory safety checks on Windows. Risky, yes, but because they introduce some
-        # C-specific symbols, they don't interact well with D.
-        CFLAGS: ${{ startsWith(matrix.os, 'windows-') && '/GS- /Gs10000000 /D_NO_CRT_STDIO_INLINE' || '' }}
+        CFLAGS: ${{ startsWith(matrix.os, 'windows-') && '-fmsc-version=1900' || '' }}
 
 
     - name: Build
-      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
+      run: ninja -C ${{ steps.strings.outputs.build-output-dir }}
 
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: Static library for ${{ matrix.os }}
+        name: Library for ${{ matrix.os }}
         path: |
           **/libfreetype.a
           **/freetype.lib
+          **/freetype.dll
         if-no-files-found: error
